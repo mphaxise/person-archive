@@ -14,6 +14,7 @@ import { collectScrollIn } from './scroll_in.js';
 import { collectEPW } from './epw.js';
 import { collectOutlookIndia } from './outlook_india.js';
 import { collectMuckRack } from './muck_rack.js';
+import { collectRSS } from './rss.js';
 import { searchAndCollect } from './search.js';
 import { enrichArticles } from '../enricher.js';
 
@@ -30,10 +31,11 @@ const PUBLICATIONS = {
 /**
  * Main entry point.
  * 1. Run discovery to find where this person publishes
- * 2. For each configured/discovered publication, run its collector
- * 3. DuckDuckGo fallback search to catch anything missed
- * 4. Metadata enrichment — fill in missing dates/summaries
- * 5. De-duplicate + sort by date
+ * 2. RSS feeds (Medium, Google News, Substack) — always run first as fast path
+ * 3. For each configured/discovered publication, run its collector
+ * 4. DuckDuckGo fallback search to catch anything missed
+ * 5. Metadata enrichment — fill in missing dates/summaries
+ * 6. De-duplicate + sort by date
  */
 export async function collectAll(config) {
   const allArticles = [];
@@ -47,6 +49,18 @@ export async function collectAll(config) {
     }
   }
 
+  // ── Step 0: RSS / Atom feeds (fast, reliable, no JS needed) ──
+  console.log(`\n  📡 Collecting via RSS feeds...`);
+  try {
+    const rssArticles = await collectRSS(config);
+    if (rssArticles.length > 0) {
+      console.log(`    → ${rssArticles.length} articles from RSS`);
+      addArticles(rssArticles);
+    }
+  } catch (err) {
+    console.warn(`    RSS collection error: ${err.message}`);
+  }
+
   // ── Step 1: Discovery ──────────────────────────────────────
   console.log(`\n  Running publication discovery for "${config.name}"...`);
   let discoveredPubs = [];
@@ -58,7 +72,7 @@ export async function collectAll(config) {
     console.warn(`  Discovery error: ${err.message}`);
   }
 
-  // Build discovery map: pubId → discovered data (articles carry title + snippet now)
+  // Build discovery map: pubId → discovered data
   const discoveryMap = new Map(discoveredPubs.map(p => [p.id, p]));
 
   // ── Step 2: Run scrapers for configured publications ──────
@@ -71,14 +85,11 @@ export async function collectAll(config) {
     const label = pub.label || pubMeta.label;
     const disc = discoveryMap.get(pub.id);
 
-    // Determine the best authorSlug: config > discovery
     const authorSlug = pub.authorSlug || disc?.authorSlug || '';
 
-    // For most scrapers, we need an authorSlug — fall back to discovery articles
     if (!authorSlug && pub.id !== 'muck_rack') {
       if (disc?.articles?.length) {
         console.log(`  ${label}: no author slug — seeding ${disc.articles.length} discovery articles`);
-        // disc.articles now carry { title, url, snippet } from DDG search
         addArticles(disc.articles.map(a => ({
           title:       a.title || formatTitleFromUrl(a.url),
           url:         a.url,
@@ -100,7 +111,6 @@ export async function collectAll(config) {
       addArticles(articles);
     } catch (err) {
       console.warn(`    ⚠️  ${label} failed: ${err.message}`);
-      // Fall back to discovery articles (with titles + snippets)
       if (disc?.articles?.length) {
         addArticles(disc.articles.map(a => ({
           title:       a.title || formatTitleFromUrl(a.url),
@@ -116,10 +126,9 @@ export async function collectAll(config) {
 
   // ── Step 3: Also try any discovered pubs not in config ────
   for (const disc of discoveredPubs) {
-    if (configPubs.find(p => p.id === disc.id)) continue; // already handled
+    if (configPubs.find(p => p.id === disc.id)) continue;
     const pubMeta = PUBLICATIONS[disc.id];
     if (!pubMeta || !disc.authorSlug) {
-      // No scraper or no slug — still seed the discovery articles
       if (disc?.articles?.length) {
         addArticles(disc.articles.map(a => ({
           title:       a.title || formatTitleFromUrl(a.url),
@@ -140,7 +149,6 @@ export async function collectAll(config) {
       addArticles(articles);
     } catch (err) {
       console.warn(`    ⚠️  ${disc.label} failed: ${err.message}`);
-      // Seed discovery articles as fallback
       if (disc?.articles?.length) {
         addArticles(disc.articles.map(a => ({
           title:       a.title || formatTitleFromUrl(a.url),
@@ -167,7 +175,6 @@ export async function collectAll(config) {
   }
 
   // ── Step 5: Metadata enrichment ───────────────────────────
-  // Fill in missing dates + excerpts via Open Graph tags and DDG snippets
   const needsEnrichment = allArticles.filter(a => !a.date || !a.excerpt);
   if (needsEnrichment.length > 0) {
     console.log(`\n  🔬 Enriching metadata for ${needsEnrichment.length} articles...`);

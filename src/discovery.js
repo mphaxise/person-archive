@@ -6,10 +6,9 @@
  * pairs that the collector modules can use.
  */
 
-
-
 // Known publications the collector supports, with their domain patterns
 const KNOWN_PUBLICATIONS = [
+  // ── Indian Publications ──────────────────────────────────────
   { id: 'new_indian_express', domain: 'newindianexpress.com', label: 'New Indian Express' },
   { id: 'the_wire',           domain: 'thewire.in',           label: 'The Wire' },
   { id: 'scroll_in',          domain: 'scroll.in',            label: 'Scroll.in' },
@@ -25,12 +24,21 @@ const KNOWN_PUBLICATIONS = [
   { id: 'firstpost',          domain: 'firstpost.com',        label: 'Firstpost' },
   { id: 'the_quint',          domain: 'thequint.com',         label: 'The Quint' },
   { id: 'national_herald',    domain: 'nationalheraldindia.com', label: 'National Herald' },
-  { id: 'muck_rack',          domain: 'muckrack.com',         label: 'Muck Rack' },
+  // ── Global Publications ──────────────────────────────────────
   { id: 'guardian',           domain: 'theguardian.com',      label: 'The Guardian' },
   { id: 'nyt',                domain: 'nytimes.com',          label: 'New York Times' },
   { id: 'wapo',               domain: 'washingtonpost.com',   label: 'Washington Post' },
+  { id: 'atlantic',           domain: 'theatlantic.com',      label: 'The Atlantic' },
+  { id: 'new_yorker',         domain: 'newyorker.com',        label: 'The New Yorker' },
+  { id: 'politico',           domain: 'politico.com',         label: 'Politico' },
+  { id: 'foreign_affairs',    domain: 'foreignaffairs.com',   label: 'Foreign Affairs' },
+  { id: 'time',               domain: 'time.com',             label: 'TIME' },
   { id: 'aljazeera',          domain: 'aljazeera.com',        label: 'Al Jazeera' },
   { id: 'bbc',                domain: 'bbc.com',              label: 'BBC' },
+  { id: 'medium',             domain: 'medium.com',           label: 'Medium' },
+  { id: 'substack',           domain: 'substack.com',         label: 'Substack' },
+  // ── Aggregators ──────────────────────────────────────────────
+  { id: 'muck_rack',          domain: 'muckrack.com',         label: 'Muck Rack' },
 ];
 
 /**
@@ -39,21 +47,24 @@ const KNOWN_PUBLICATIONS = [
  *
  * Strategy:
  *   1. DuckDuckGo HTML search for "Name" site:domain for each known pub
- *   2. Muck Rack profile lookup
+ *   2. Muck Rack profile lookup (with validation)
  *   3. DuckDuckGo general search to surface any unlisted publications
  */
 export async function discoverPublications(personName) {
-  console.log(`  🔍 Discovering publications for "${personName}"...`);
+  // Normalize name: trim and title-case to improve DDG results
+  const normalizedName = normalizeName(personName);
+  console.log(`  🔍 Discovering publications for "${normalizedName}" (input: "${personName}")...`);
 
   const found = [];
   const allUrls = new Set();
 
   // ── Phase 1: targeted site: searches for each known publication ──
   for (const pub of KNOWN_PUBLICATIONS) {
-    const results = await ddgSearch(`"${personName}" site:${pub.domain}`);
+    if (pub.id === 'muck_rack') continue; // handled separately in phase 3
+    const results = await ddgSearch(`"${normalizedName}" site:${pub.domain}`);
     const matching = results.filter(r =>
       r.url.includes(pub.domain) &&
-      !r.url.match(/\/(tag|category|section|topic)\//i)
+      !r.url.match(/\/(tag|category|section|topic|search|signup|subscribe|login|about|contact|newsletter)\//i)
     );
     if (matching.length > 0) {
       const authorSlug = extractAuthorSlug(matching.map(r => r.url), pub.domain);
@@ -64,10 +75,10 @@ export async function discoverPublications(personName) {
   }
 
   // ── Phase 2: general search to surface any publications we missed ──
-  const generalResults = await ddgSearch(`"${personName}" opinion essay article author`);
+  const generalResults = await ddgSearch(`"${normalizedName}" opinion essay article author`);
   for (const r of generalResults) {
     if (allUrls.has(r.url)) continue;
-    const knownPub = KNOWN_PUBLICATIONS.find(p => r.url.includes(p.domain));
+    const knownPub = KNOWN_PUBLICATIONS.find(p => r.url.includes(p.domain) && p.id !== 'muck_rack');
     if (knownPub && !found.find(f => f.id === knownPub.id)) {
       found.push({ ...knownPub, articles: [r], authorSlug: '' });
       allUrls.add(r.url);
@@ -75,8 +86,8 @@ export async function discoverPublications(personName) {
     }
   }
 
-  // ── Phase 3: Muck Rack profile (aggregator — catches everything else) ──
-  const muckRackSlug = personName.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+  // ── Phase 3: Muck Rack profile (validate before accepting) ──────
+  const muckRackSlug = normalizedName.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
   const muckRackProfile = await checkMuckRack(muckRackSlug);
   if (muckRackProfile) {
     const existing = found.find(f => f.id === 'muck_rack');
@@ -102,6 +113,15 @@ export async function discoverPublications(personName) {
 }
 
 /**
+ * Normalize a person's name: trim whitespace, title-case each word.
+ * "barak obama" → "Barack Obama"
+ * "SHIV VISVANATHAN" → "Shiv Visvanathan"
+ */
+function normalizeName(name) {
+  return name.trim().split(/\s+/).map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
+}
+
+/**
  * Given a set of article URLs for a domain, try to extract the author slug.
  * e.g. "https://thewire.in/author/shiv-visvanathan" → "shiv-visvanathan"
  */
@@ -120,7 +140,7 @@ function extractAuthorSlug(urls, domain) {
       if (m) return m[1];
     }
   }
-  return ''; // Will need manual config or DuckDuckGo-based collection
+  return '';
 }
 
 /**
@@ -149,7 +169,6 @@ async function ddgSearch(query, maxResults = 10) {
 function parseDdgHtml(html) {
   const results = [];
 
-  // Extract redirect URLs
   const urlRegex = /href="\/\/duckduckgo\.com\/l\/\?uddg=([^"&]+)/g;
   const titleRegex = /class="result__a"[^>]*>([\s\S]*?)<\/a>/g;
   const snippetRegex = /class="result__snippet"[^>]*>([\s\S]*?)<\/(?:a|span)>/g;
@@ -184,7 +203,13 @@ function parseDdgHtml(html) {
 }
 
 /**
- * Check if a Muck Rack profile exists for the given slug.
+ * Check if a Muck Rack profile exists AND is actually a journalist profile.
+ * Returns profile URL if valid, null otherwise.
+ *
+ * A real journalist profile has:
+ *  - A <h1> or .profile-name with the person's name
+ *  - OR JSON-LD data with @type: Person
+ *  - NOT a software/product page (those lack profile indicators)
  */
 async function checkMuckRack(slug) {
   try {
@@ -193,8 +218,40 @@ async function checkMuckRack(slug) {
       headers: { 'User-Agent': 'Mozilla/5.0' },
       timeout: 8000
     });
-    if (res.ok && res.status === 200) return url;
-    return null;
+    if (!res.ok || res.status !== 200) return null;
+
+    const html = await res.text();
+
+    // ── Validate: must look like a journalist profile ────────────
+    const hasProfileIndicator =
+      // JSON-LD person type
+      /"@type"\s*:\s*"Person"/.test(html) ||
+      // Muck Rack journalist-specific classes
+      /class="[^"]*journalist[^"]*"/.test(html) ||
+      /class="[^"]*reporter[^"]*"/.test(html) ||
+      /class="[^"]*profile-header[^"]*"/.test(html) ||
+      // Profile cover/bio sections
+      /id="profile-/.test(html) ||
+      // data-journalist attribute
+      /data-journalist/.test(html);
+
+    // ── Reject: if it looks like a product/software page ────────
+    const isSoftwarePage =
+      /pr.software/i.test(url) ||
+      /class="[^"]*product[^"]*"/.test(html) ||
+      /Inbound Media Manager|Social Listening|Print Monitoring|Broadcast Monitoring/i.test(html);
+
+    if (isSoftwarePage) {
+      console.log(`    ⚠️  Muck Rack slug "${slug}" resolves to a product page — skipping`);
+      return null;
+    }
+
+    if (!hasProfileIndicator) {
+      console.log(`    ⚠️  Muck Rack slug "${slug}" doesn't appear to be a journalist profile — skipping`);
+      return null;
+    }
+
+    return url;
   } catch {
     return null;
   }
@@ -205,8 +262,9 @@ async function checkMuckRack(slug) {
  * Used by the collector as a fast path when author page scrapers fail.
  */
 export async function searchArticlesForPerson(personName, publication = null) {
+  const normalizedName = normalizeName(personName);
   const query = publication
-    ? `"${personName}" site:${publication}`
-    : `"${personName}" opinion article essay`;
+    ? `"${normalizedName}" site:${publication}`
+    : `"${normalizedName}" opinion article essay`;
   return await ddgSearch(query, 20);
 }
