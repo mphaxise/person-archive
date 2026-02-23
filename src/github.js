@@ -2,185 +2,158 @@
  * github.js
  *
  * GitHub REST API utilities for PersonArchive.
- * Handles: get user, create repo, push directory contents as initial commit.
+ *
+ * Two variants:
+ *   pushFilesInMemory() — accepts {path: contentString} map (Workers-safe)
+ *   pushDirToRepo()     — reads from local directory (CLI)
+ *
+ * Uses native fetch (Node 18+ / Workers).
  */
-
-import fetch from 'node-fetch';
-import fs from 'fs';
-import path from 'path';
 
 const BASE = 'https://api.github.com';
 
-function headers(token) {
+function ghHeaders(token) {
   return {
-    'Authorization': `Bearer ${token}`,
-    'Accept': 'application/vnd.github+json',
+    'Authorization':        `Bearer ${token}`,
+    'Accept':               'application/vnd.github+json',
     'X-GitHub-Api-Version': '2022-11-28',
-    'Content-Type': 'application/json',
-    'User-Agent': 'PersonArchive/0.1'
+    'Content-Type':         'application/json',
+    'User-Agent':           'PersonArchive/0.1'
   };
 }
 
-/**
- * Get the authenticated user's login name.
- */
+// ── Auth / user ───────────────────────────────────────────────────────────────
+
 export async function getGitHubUser(token) {
-  const res = await fetch(`${BASE}/user`, { headers: headers(token) });
+  const res = await fetch(`${BASE}/user`, { headers: ghHeaders(token) });
   if (!res.ok) throw new Error(`GitHub auth failed: ${res.status} ${await res.text()}`);
-  const data = await res.json();
-  return data.login;
+  return (await res.json()).login;
 }
 
-/**
- * Create a new GitHub repository under the authenticated user.
- * Returns the full repo object.
- */
+// ── Repo creation ─────────────────────────────────────────────────────────────
+
 export async function createRepo(token, { repoName, description = '', isPrivate = false }) {
-  // Check if repo already exists
-  const owner = await getGitHubUser(token);
-  const checkRes = await fetch(`${BASE}/repos/${owner}/${repoName}`, { headers: headers(token) });
+  const owner    = await getGitHubUser(token);
+  const checkRes = await fetch(`${BASE}/repos/${owner}/${repoName}`, { headers: ghHeaders(token) });
   if (checkRes.ok) {
     console.log(`   GitHub repo ${owner}/${repoName} already exists — reusing`);
     return await checkRes.json();
   }
-
   const res = await fetch(`${BASE}/user/repos`, {
-    method: 'POST',
-    headers: headers(token),
-    body: JSON.stringify({
-      name: repoName,
-      description,
-      private: isPrivate,
-      auto_init: true,
-      has_issues: false,
-      has_projects: false,
-      has_wiki: false
-    })
+    method:  'POST',
+    headers: ghHeaders(token),
+    body:    JSON.stringify({ name: repoName, description, private: isPrivate, auto_init: true, has_issues: false, has_projects: false, has_wiki: false })
   });
-  if (!res.ok) {
-    const err = await res.text();
-    throw new Error(`Failed to create repo: ${res.status} ${err}`);
-  }
+  if (!res.ok) throw new Error(`Failed to create repo: ${res.status} ${await res.text()}`);
   const repo = await res.json();
-  // Wait a moment for auto_init to complete
-  await delay(1500);
+  await delay(1500); // wait for auto_init
   return repo;
 }
 
-/**
- * Push all files in a local directory to a GitHub repo via the Git Trees API.
- * This creates a single commit with all files — no local git install needed.
- */
-export async function pushDirToRepo(token, { owner, repoName, dirPath, message = 'chore: update archive', branch = 'main' }) {
-  // 1. Get current HEAD commit SHA
-  const refRes = await fetch(`${BASE}/repos/${owner}/${repoName}/git/refs/heads/${branch}`, {
-    headers: headers(token)
-  });
+// ── Shared Git tree push logic ────────────────────────────────────────────────
 
-  let parentSha = null;
-  let baseTreeSha = null;
-
+async function pushFileMap(token, { owner, repoName, files, message = 'chore: update archive', branch = 'main' }) {
+  // 1. Get current HEAD
+  const refRes = await fetch(`${BASE}/repos/${owner}/${repoName}/git/refs/heads/${branch}`, { headers: ghHeaders(token) });
+  let parentSha = null, baseTreeSha = null;
   if (refRes.ok) {
     const ref = await refRes.json();
-    parentSha = ref.object.sha;
-    // Get tree SHA from that commit
-    const commitRes = await fetch(`${BASE}/repos/${owner}/${repoName}/git/commits/${parentSha}`, {
-      headers: headers(token)
-    });
-    if (commitRes.ok) {
-      const commit = await commitRes.json();
-      baseTreeSha = commit.tree.sha;
+    parentSha = ref.object?.sha;
+    if (parentSha) {
+      const commitRes = await fetch(`${BASE}/repos/${owner}/${repoName}/git/commits/${parentSha}`, { headers: ghHeaders(token) });
+      if (commitRes.ok) baseTreeSha = (await commitRes.json()).tree?.sha;
     }
   }
 
-  // 2. Collect all files recursively
-  const files = collectFilesRecursively(dirPath, dirPath);
-  if (files.length === 0) throw new Error(`No files found in ${dirPath}`);
+  // 2. Create blobs
+  const treeItems = await Promise.all(
+    Object.entries(files).map(async ([filePath, content]) => {
+      const blobRes = await fetch(`${BASE}/repos/${owner}/${repoName}/git/blobs`, {
+        method:  'POST',
+        headers: ghHeaders(token),
+        body:    JSON.stringify({ content: btoa(unescape(encodeURIComponent(content))), encoding: 'base64' })
+      });
+      if (!blobRes.ok) throw new Error(`Blob create failed for ${filePath}: ${await blobRes.text()}`);
+      const blob = await blobRes.json();
+      return { path: filePath, mode: '100644', type: 'blob', sha: blob.sha };
+    })
+  );
 
-  console.log(`   Pushing ${files.length} files to ${owner}/${repoName}/${branch}...`);
+  console.log(`   Pushing ${treeItems.length} files to ${owner}/${repoName}/${branch}...`);
 
-  // 3. Create blobs for all files
-  const treeItems = await Promise.all(files.map(async ({ relativePath, absolutePath }) => {
-    const content = fs.readFileSync(absolutePath);
-    const isText = isTextFile(relativePath);
-
-    const blobBody = isText
-      ? { content: content.toString('utf-8'), encoding: 'utf-8' }
-      : { content: content.toString('base64'), encoding: 'base64' };
-
-    const blobRes = await fetch(`${BASE}/repos/${owner}/${repoName}/git/blobs`, {
-      method: 'POST',
-      headers: headers(token),
-      body: JSON.stringify(blobBody)
-    });
-    if (!blobRes.ok) throw new Error(`Failed to create blob for ${relativePath}: ${await blobRes.text()}`);
-    const blob = await blobRes.json();
-
-    return {
-      path: relativePath,
-      mode: '100644',
-      type: 'blob',
-      sha: blob.sha
-    };
-  }));
-
-  // 4. Create a tree
+  // 3. Create tree
   const treeBody = { tree: treeItems };
   if (baseTreeSha) treeBody.base_tree = baseTreeSha;
-
   const treeRes = await fetch(`${BASE}/repos/${owner}/${repoName}/git/trees`, {
-    method: 'POST',
-    headers: headers(token),
-    body: JSON.stringify(treeBody)
+    method:  'POST',
+    headers: ghHeaders(token),
+    body:    JSON.stringify(treeBody)
   });
-  if (!treeRes.ok) throw new Error(`Failed to create tree: ${await treeRes.text()}`);
+  if (!treeRes.ok) throw new Error(`Tree create failed: ${await treeRes.text()}`);
   const tree = await treeRes.json();
 
-  // 5. Create a commit
-  const commitBody = {
-    message,
-    tree: tree.sha,
-    ...(parentSha ? { parents: [parentSha] } : {})
-  };
-
-  const commitRes = await fetch(`${BASE}/repos/${owner}/${repoName}/git/commits`, {
-    method: 'POST',
-    headers: headers(token),
-    body: JSON.stringify(commitBody)
+  // 4. Create commit
+  const commitBody = { message, tree: tree.sha, ...(parentSha ? { parents: [parentSha] } : {}) };
+  const commitRes  = await fetch(`${BASE}/repos/${owner}/${repoName}/git/commits`, {
+    method:  'POST',
+    headers: ghHeaders(token),
+    body:    JSON.stringify(commitBody)
   });
-  if (!commitRes.ok) throw new Error(`Failed to create commit: ${await commitRes.text()}`);
+  if (!commitRes.ok) throw new Error(`Commit create failed: ${await commitRes.text()}`);
   const commit = await commitRes.json();
 
-  // 6. Update the ref (or create it)
-  const updateRefRes = await fetch(`${BASE}/repos/${owner}/${repoName}/git/refs/heads/${branch}`, {
-    method: 'PATCH',
-    headers: headers(token),
-    body: JSON.stringify({ sha: commit.sha, force: true })
+  // 5. Update ref
+  const patchRes = await fetch(`${BASE}/repos/${owner}/${repoName}/git/refs/heads/${branch}`, {
+    method:  'PATCH',
+    headers: ghHeaders(token),
+    body:    JSON.stringify({ sha: commit.sha, force: true })
   });
-
-  if (!updateRefRes.ok) {
-    // Ref might not exist yet — create it
+  if (!patchRes.ok) {
     await fetch(`${BASE}/repos/${owner}/${repoName}/git/refs`, {
-      method: 'POST',
-      headers: headers(token),
-      body: JSON.stringify({ ref: `refs/heads/${branch}`, sha: commit.sha })
+      method:  'POST',
+      headers: ghHeaders(token),
+      body:    JSON.stringify({ ref: `refs/heads/${branch}`, sha: commit.sha })
     });
   }
-
   return commit.sha;
 }
 
-function collectFilesRecursively(baseDir, currentDir) {
-  const results = [];
-  const SKIP = new Set(['.git', 'node_modules', '.DS_Store', '.env']);
+// ── In-memory variant (Workers-safe) ─────────────────────────────────────────
 
+/**
+ * Push an in-memory file map to a GitHub repo.
+ * @param {string} token
+ * @param {{ owner: string, repoName: string, files: {[path]: string}, message?: string, branch?: string }} opts
+ */
+export async function pushFilesInMemory(token, { owner, repoName, files, message, branch }) {
+  return pushFileMap(token, { owner, repoName, files, message, branch });
+}
+
+// ── Disk-based variant (CLI only) ─────────────────────────────────────────────
+
+/**
+ * Push all files from a local directory to a GitHub repo.
+ */
+export async function pushDirToRepo(token, { owner, repoName, dirPath, message = 'chore: update archive', branch = 'main' }) {
+  const { default: fs }   = await import('fs');
+  const { default: path } = await import('path');
+
+  const diskFiles = {};
+  for (const { relativePath, absolutePath } of collectFilesFromDisk(dirPath, dirPath, fs, path)) {
+    diskFiles[relativePath] = fs.readFileSync(absolutePath, 'utf-8');
+  }
+  return pushFileMap(token, { owner, repoName, files: diskFiles, message, branch });
+}
+
+function collectFilesFromDisk(baseDir, currentDir, fs, path) {
+  const results = [];
+  const SKIP    = new Set(['.git', 'node_modules', '.DS_Store', '.env']);
   for (const entry of fs.readdirSync(currentDir)) {
     if (SKIP.has(entry)) continue;
     const absPath = path.join(currentDir, entry);
     const relPath = path.relative(baseDir, absPath);
-    const stat = fs.statSync(absPath);
-    if (stat.isDirectory()) {
-      results.push(...collectFilesRecursively(baseDir, absPath));
+    if (fs.statSync(absPath).isDirectory()) {
+      results.push(...collectFilesFromDisk(baseDir, absPath, fs, path));
     } else {
       results.push({ relativePath: relPath, absolutePath: absPath });
     }
@@ -188,14 +161,4 @@ function collectFilesRecursively(baseDir, currentDir) {
   return results;
 }
 
-function isTextFile(filename) {
-  const textExts = new Set([
-    '.html', '.css', '.js', '.json', '.md', '.txt', '.xml',
-    '.svg', '.ts', '.jsx', '.tsx', '.yaml', '.yml', '.toml', '.sh'
-  ]);
-  return textExts.has(path.extname(filename).toLowerCase());
-}
-
-function delay(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
+function delay(ms) { return new Promise(r => setTimeout(r, ms)); }

@@ -70,7 +70,7 @@ export function sleep(ms) {
  * Safe fetch with timeout and retry
  */
 export async function safeFetch(url, opts = {}, retries = 2) {
-  const { default: fetch } = await import('node-fetch');
+  // Use native fetch (Node 18+ / Workers)
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), opts.timeout || 15000);
   try {

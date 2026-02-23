@@ -6,7 +6,7 @@
  * or when a publication has no dedicated collector.
  */
 
-import fetch from 'node-fetch';
+
 
 /**
  * Search DuckDuckGo for "[Person Name] article/essay/opinion"

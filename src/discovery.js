@@ -6,7 +6,7 @@
  * pairs that the collector modules can use.
  */
 
-import fetch from 'node-fetch';
+
 
 // Known publications the collector supports, with their domain patterns
 const KNOWN_PUBLICATIONS = [

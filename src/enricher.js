@@ -14,7 +14,7 @@
  * Articles are enriched in-place (mutation of the passed array).
  */
 
-import fetch from 'node-fetch';
+
 
 // How many articles to enrich in parallel
 const CONCURRENCY = 6;

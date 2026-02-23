@@ -1,193 +1,184 @@
 /**
  * cloudflare.js
  *
- * Cloudflare Pages deployment via wrangler CLI (primary) or REST API (fallback).
+ * Cloudflare Pages deployment.
+ *
+ * Two variants:
+ *   deployInMemory()  — accepts {path: contentString} map, no fs/execSync (Workers-safe)
+ *   fullDeploy()      — accepts a distDir path, uses wrangler CLI or REST API (CLI)
+ *
+ * Uses native fetch (Node 18+ / Workers).
  */
-
-import fetch from 'node-fetch';
-import fs from 'fs';
-import path from 'path';
-import { execSync } from 'child_process';
 
 const BASE = 'https://api.cloudflare.com/client/v4';
 
-function headers(token) {
+function cfHeaders(token) {
   return {
     'Authorization': `Bearer ${token}`,
-    'User-Agent': 'PersonArchive/0.1'
+    'User-Agent':    'PersonArchive/0.1'
   };
 }
 
-/**
- * Verify a Cloudflare API token is valid.
- */
-export async function verifyToken(token) {
-  const res = await fetch(`${BASE}/user/tokens/verify`, { headers: headers(token) });
-  if (!res.ok) throw new Error(`Token invalid: ${res.status}`);
-  return await res.json();
+// ── SHA-256 helper ────────────────────────────────────────────────────────────
+
+async function sha256Hex(str) {
+  const data = new TextEncoder().encode(str);
+  const hashBuf = await crypto.subtle.digest('SHA-256', data);
+  return [...new Uint8Array(hashBuf)].map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
-/**
- * Full deploy pipeline:
- *   1. Create (or get existing) Cloudflare Pages project
- *   2. Deploy all files via wrangler pages deploy (primary) or Direct Upload API (fallback)
- *   3. Return the live URL
- */
-export async function fullDeploy(token, accountId, projectName, distDir) {
-  // Step 1: Ensure project exists
-  await ensureProject(token, accountId, projectName);
-  const liveUrl = `https://${projectName}.pages.dev`;
+// ── Ensure project exists ─────────────────────────────────────────────────────
 
-  // Step 2: Deploy
-  console.log(`   Deploying to Cloudflare Pages: ${projectName}...`);
-
-  // Try wrangler first (most reliable — handles manifest automatically)
-  try {
-    execSync('npx wrangler --version', { stdio: 'pipe' });
-    return await deployWithWrangler(token, accountId, projectName, distDir, liveUrl);
-  } catch (e) {
-    console.log(`   wrangler not available (${e.message?.slice(0, 60)}), trying REST API...`);
+export async function ensureProject(token, accountId, projectName) {
+  const checkRes = await fetch(
+    `${BASE}/accounts/${accountId}/pages/projects/${projectName}`,
+    { headers: cfHeaders(token) }
+  );
+  if (checkRes.ok) {
+    console.log(`   CF project "${projectName}" already exists`);
+    return;
   }
-
-  // Fallback: Direct Upload via REST API with manifest
-  return await deployWithApi(token, accountId, projectName, distDir, liveUrl);
-}
-
-async function ensureProject(token, accountId, projectName) {
-  // Check if project exists
-  const listRes = await fetch(`${BASE}/accounts/${accountId}/pages/projects/${projectName}`, {
-    headers: headers(token)
-  });
-
-  if (listRes.ok) {
-    console.log(`   Cloudflare Pages project "${projectName}" already exists`);
-    return await listRes.json();
-  }
-
-  // Create new project
-  console.log(`   Creating Cloudflare Pages project "${projectName}"...`);
-  const createRes = await fetch(`${BASE}/accounts/${accountId}/pages/projects`, {
-    method: 'POST',
-    headers: { ...headers(token), 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      name: projectName,
-      production_branch: 'main'
-    })
-  });
-
+  console.log(`   Creating CF Pages project "${projectName}"...`);
+  const createRes = await fetch(
+    `${BASE}/accounts/${accountId}/pages/projects`,
+    {
+      method:  'POST',
+      headers: { ...cfHeaders(token), 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ name: projectName, production_branch: 'main' })
+    }
+  );
   if (!createRes.ok) {
     const err = await createRes.text();
-    throw new Error(`Failed to create Cloudflare Pages project: ${createRes.status} ${err}`);
+    throw new Error(`Failed to create CF project: ${createRes.status} ${err}`);
   }
-
-  return await createRes.json();
 }
 
-async function deployWithWrangler(token, accountId, projectName, distDir, liveUrl) {
-  const env = {
-    ...process.env,
-    CLOUDFLARE_API_TOKEN: token,
-    CLOUDFLARE_ACCOUNT_ID: accountId
-  };
-
-  console.log(`   Using wrangler to deploy from ${distDir}...`);
-  execSync(
-    `npx wrangler pages deploy "${distDir}" --project-name "${projectName}" --commit-message "PersonArchive deploy"`,
-    { env, stdio: 'inherit' }
-  );
-  return liveUrl;
-}
+// ── In-memory deploy (Workers-safe) ──────────────────────────────────────────
 
 /**
- * Cloudflare Pages Direct Upload via REST API.
- * Uses the two-step approach: create deployment with manifest, then upload files.
+ * Deploy an archive to Cloudflare Pages using only in-memory file contents.
+ *
+ * @param {string} token       - Cloudflare API token
+ * @param {string} accountId   - Cloudflare account ID
+ * @param {string} projectName - Pages project name (will be created if absent)
+ * @param {Object} files       - { 'index.html': '...', 'data/articles.json': '...' }
+ * @returns {string}           - Live URL
  */
-async function deployWithApi(token, accountId, projectName, distDir, liveUrl) {
-  const crypto = await import('crypto');
-  const files = collectFiles(distDir, distDir);
+export async function deployInMemory(token, accountId, projectName, files) {
+  await ensureProject(token, accountId, projectName);
 
-  // Step A: Build manifest (path → sha256 hash)
-  const manifest = {};
-  const fileContents = {};
+  // Build manifest: { '/path': sha256 }
+  const manifest  = {};
+  const hashToContent = {};
 
-  for (const { relativePath, absolutePath } of files) {
-    const content = fs.readFileSync(absolutePath);
-    const hash = crypto.createHash('sha256').update(content).digest('hex');
-    manifest['/' + relativePath.replace(/\\/g, '/')] = hash;
-    fileContents[hash] = { content, relativePath, absolutePath };
+  for (const [filePath, content] of Object.entries(files)) {
+    const key  = '/' + filePath.replace(/\\/g, '/').replace(/^\//, '');
+    const hash = await sha256Hex(content);
+    manifest[key]         = hash;
+    hashToContent[hash]   = { content, filePath };
   }
 
-  // Step B: Create deployment with manifest
+  // Step 1: Create deployment with manifest
   const deployRes = await fetch(
     `${BASE}/accounts/${accountId}/pages/projects/${projectName}/deployments`,
     {
-      method: 'POST',
-      headers: { ...headers(token), 'Content-Type': 'application/json' },
-      body: JSON.stringify({ manifest })
+      method:  'POST',
+      headers: { ...cfHeaders(token), 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ manifest })
     }
   );
 
   if (!deployRes.ok) {
     const err = await deployRes.text();
-    throw new Error(`Cloudflare deploy init failed: ${deployRes.status} ${err}`);
+    throw new Error(`CF deploy init failed: ${deployRes.status} ${err}`);
   }
 
-  const deployData = await deployRes.json();
+  const deployData   = await deployRes.json();
   const deploymentId = deployData.result?.id;
-  if (!deploymentId) throw new Error('No deployment ID returned');
+  if (!deploymentId) throw new Error('No deployment ID returned from CF');
 
-  console.log(`   Deployment created: ${deploymentId}`);
+  console.log(`   CF deployment created: ${deploymentId}`);
 
-  // Step C: Upload all required files
-  const required = deployData.result?.required_hash_list || [];
-  const toUpload = required.length > 0
-    ? required.map(hash => fileContents[hash]).filter(Boolean)
-    : Object.values(fileContents);
+  // Step 2: Upload required files
+  const required = deployData.result?.required_hash_list || Object.keys(hashToContent);
+  for (const hash of required) {
+    const entry = hashToContent[hash];
+    if (!entry) continue;
 
-  for (const { content, relativePath, absolutePath } of toUpload) {
-    const hash = crypto.createHash('sha256').update(content).digest('hex');
-    const mime = getMimeType(relativePath);
-
+    const mime = getMimeType(entry.filePath);
     const uploadRes = await fetch(
       `${BASE}/accounts/${accountId}/pages/projects/${projectName}/deployments/${deploymentId}/files/${hash}`,
       {
-        method: 'PUT',
-        headers: { ...headers(token), 'Content-Type': mime },
-        body: content
+        method:  'PUT',
+        headers: { ...cfHeaders(token), 'Content-Type': mime },
+        body:    entry.content
       }
     );
-
     if (!uploadRes.ok) {
       const err = await uploadRes.text();
-      console.warn(`   Warning: Failed to upload ${relativePath}: ${err}`);
+      console.warn(`   Warning: upload failed for ${entry.filePath}: ${err}`);
     }
   }
 
-  // Step D: Mark deployment complete
-  const completeRes = await fetch(
+  // Step 3: Mark complete
+  await fetch(
     `${BASE}/accounts/${accountId}/pages/projects/${projectName}/deployments/${deploymentId}`,
     {
-      method: 'PATCH',
-      headers: { ...headers(token), 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status: 'complete' })
+      method:  'PATCH',
+      headers: { ...cfHeaders(token), 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ status: 'complete' })
     }
   );
 
-  const deployUrl = deployData.result?.url || liveUrl;
-  return deployUrl;
+  return deployData.result?.url || `https://${projectName}.pages.dev`;
 }
 
-function collectFiles(baseDir, currentDir) {
+// ── Disk-based deploy (CLI only) ──────────────────────────────────────────────
+
+/**
+ * Full deploy from a local dist directory.
+ * Tries wrangler CLI first, falls back to REST API.
+ */
+export async function fullDeploy(token, accountId, projectName, distDir) {
+  const { execSync }    = await import('child_process');
+  const { default: fs } = await import('fs');
+  const { default: path } = await import('path');
+
+  await ensureProject(token, accountId, projectName);
+  const liveUrl = `https://${projectName}.pages.dev`;
+
+  // Try wrangler
+  try {
+    execSync('npx wrangler --version', { stdio: 'pipe' });
+    const env = { ...process.env, CLOUDFLARE_API_TOKEN: token, CLOUDFLARE_ACCOUNT_ID: accountId };
+    console.log(`   Deploying via wrangler from ${distDir}...`);
+    execSync(
+      `npx wrangler pages deploy "${distDir}" --project-name "${projectName}" --commit-message "PersonArchive deploy"`,
+      { env, stdio: 'inherit' }
+    );
+    return liveUrl;
+  } catch (e) {
+    console.log(`   wrangler unavailable (${e.message?.slice(0, 60)}), using REST API...`);
+  }
+
+  // Fallback: load files from disk and use in-memory deploy
+  const diskFiles = {};
+  const allFiles  = collectFilesFromDisk(distDir, distDir, fs, path);
+  for (const { relativePath, absolutePath } of allFiles) {
+    diskFiles[relativePath] = fs.readFileSync(absolutePath, 'utf-8');
+  }
+  return await deployInMemory(token, accountId, projectName, diskFiles);
+}
+
+function collectFilesFromDisk(baseDir, currentDir, fs, path) {
   const results = [];
   const SKIP = new Set(['.git', 'node_modules', '.DS_Store', '.env']);
-
   for (const entry of fs.readdirSync(currentDir)) {
     if (SKIP.has(entry)) continue;
     const absPath = path.join(currentDir, entry);
     const relPath = path.relative(baseDir, absPath);
-    const stat = fs.statSync(absPath);
-    if (stat.isDirectory()) {
-      results.push(...collectFiles(baseDir, absPath));
+    if (fs.statSync(absPath).isDirectory()) {
+      results.push(...collectFilesFromDisk(baseDir, absPath, fs, path));
     } else {
       results.push({ relativePath: relPath, absolutePath: absPath });
     }
@@ -196,19 +187,12 @@ function collectFiles(baseDir, currentDir) {
 }
 
 function getMimeType(filename) {
-  const ext = path.extname(filename).toLowerCase();
+  const ext = filename.split('.').pop().toLowerCase();
   const map = {
-    '.html': 'text/html',
-    '.css': 'text/css',
-    '.js': 'application/javascript',
-    '.json': 'application/json',
-    '.svg': 'image/svg+xml',
-    '.png': 'image/png',
-    '.jpg': 'image/jpeg',
-    '.ico': 'image/x-icon',
-    '.woff2': 'font/woff2',
-    '.woff': 'font/woff',
-    '.ttf': 'font/ttf',
+    html: 'text/html', css: 'text/css', js: 'application/javascript',
+    json: 'application/json', svg: 'image/svg+xml', png: 'image/png',
+    jpg: 'image/jpeg', ico: 'image/x-icon', woff2: 'font/woff2',
+    woff: 'font/woff', ttf: 'font/ttf'
   };
   return map[ext] || 'application/octet-stream';
 }
