@@ -24,6 +24,8 @@ export const TEMPLATE = `<!DOCTYPE html>
     --radius: 8px; --font: 'Georgia', serif; --mono: 'SF Mono', 'Fira Code', monospace;
   }
   body { background: var(--bg); color: var(--text); font-family: var(--font); min-height: 100vh; line-height: 1.6; }
+
+  /* ── Hero ── */
   .hero { padding: 80px 40px 60px; max-width: 900px; margin: 0 auto; border-bottom: 1px solid var(--border); }
   .hero-label { font-family: var(--mono); font-size: 11px; letter-spacing: 3px; text-transform: uppercase; color: var(--accent); margin-bottom: 20px; }
   .hero h1 { font-size: clamp(2rem, 5vw, 3.5rem); font-weight: normal; letter-spacing: -0.02em; line-height: 1.1; margin-bottom: 16px; }
@@ -32,6 +34,25 @@ export const TEMPLATE = `<!DOCTYPE html>
   .stat { display: flex; flex-direction: column; gap: 4px; }
   .stat-value { font-family: var(--mono); font-size: 1.6rem; color: var(--accent); }
   .stat-label { font-family: var(--mono); font-size: 10px; letter-spacing: 2px; text-transform: uppercase; color: var(--text-dim); }
+
+  /* ── Career Narrative ── */
+  .narrative-section { border-bottom: 1px solid var(--border); }
+  .narrative-inner { max-width: 900px; margin: 0 auto; padding: 60px 40px; }
+  .narrative-label { font-family: var(--mono); font-size: 11px; letter-spacing: 3px; text-transform: uppercase; color: var(--accent); margin-bottom: 16px; }
+  .narrative-headline { font-size: clamp(1.4rem, 3vw, 2rem); font-weight: normal; letter-spacing: -0.01em; margin-bottom: 16px; color: var(--text); }
+  .narrative-summary { font-size: 1rem; color: var(--text-muted); max-width: 680px; line-height: 1.7; margin-bottom: 48px; }
+  .era-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 20px; }
+  .era-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 24px; transition: border-color 0.2s; }
+  .era-card:hover { border-color: rgba(232,213,163,0.4); }
+  .era-header { display: flex; align-items: baseline; gap: 12px; margin-bottom: 10px; }
+  .era-years { font-family: var(--mono); font-size: 11px; letter-spacing: 1px; color: var(--accent); white-space: nowrap; }
+  .era-title { font-size: 1.05rem; color: var(--text); font-style: italic; }
+  .era-meta { display: flex; gap: 20px; flex-wrap: wrap; margin-bottom: 12px; }
+  .era-meta-item { font-family: var(--mono); font-size: 11px; color: var(--text-dim); }
+  .era-meta-label { text-transform: uppercase; letter-spacing: 1px; margin-right: 6px; color: var(--text-dim); }
+  .era-description { font-size: 0.88rem; color: var(--text-muted); line-height: 1.6; }
+
+  /* ── Controls ── */
   .controls { max-width: 900px; margin: 0 auto; padding: 28px 40px; display: flex; gap: 12px; flex-wrap: wrap; align-items: center; border-bottom: 1px solid var(--border); position: sticky; top: 0; background: var(--bg); z-index: 10; }
   .search-box { flex: 1; min-width: 200px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 16px; color: var(--text); font-family: var(--font); font-size: 0.95rem; outline: none; transition: border-color 0.2s; }
   .search-box:focus { border-color: var(--accent); }
@@ -39,6 +60,8 @@ export const TEMPLATE = `<!DOCTYPE html>
   select.filter { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 14px; color: var(--text); font-family: var(--font); font-size: 0.9rem; outline: none; cursor: pointer; appearance: none; padding-right: 32px; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%23888' stroke-width='1.5' fill='none'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 12px center; }
   select.filter:focus { border-color: var(--accent); }
   .result-count { font-family: var(--mono); font-size: 11px; color: var(--text-dim); letter-spacing: 1px; margin-left: auto; }
+
+  /* ── Article List ── */
   .archive-container { max-width: 900px; margin: 0 auto; padding: 0 40px 80px; }
   .article-list { list-style: none; }
   .article-item { border-bottom: 1px solid var(--border); transition: background 0.15s; }
@@ -51,15 +74,20 @@ export const TEMPLATE = `<!DOCTYPE html>
   .article-pub { font-family: var(--mono); font-size: 11px; color: var(--text-dim); text-align: right; padding-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .empty-state { padding: 80px 0; text-align: center; color: var(--text-dim); }
   .empty-state p { font-family: var(--mono); font-size: 13px; }
+
+  /* ── Footer ── */
   footer { border-top: 1px solid var(--border); padding: 32px 40px; max-width: 900px; margin: 0 auto; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; }
   .footer-meta { font-family: var(--mono); font-size: 11px; color: var(--text-dim); letter-spacing: 1px; }
   .footer-meta a { color: var(--accent); text-decoration: none; }
   .footer-meta a:hover { text-decoration: underline; }
+
+  /* ── Responsive ── */
   @media (max-width: 640px) {
-    .hero, .controls, .archive-container { padding-left: 20px; padding-right: 20px; }
+    .hero, .narrative-inner, .controls, .archive-container { padding-left: 20px; padding-right: 20px; }
     .article-link { grid-template-columns: 1fr; gap: 6px; }
     .article-date, .article-pub { text-align: left; }
     .hero-stats { gap: 24px; }
+    .era-grid { grid-template-columns: 1fr; }
   }
 <\/style>
 </head>
@@ -74,6 +102,7 @@ export const TEMPLATE = `<!DOCTYPE html>
     <div class="stat"><span class="stat-value">{{YEAR_RANGE}}</span><span class="stat-label">Active Years</span></div>
   </div>
 </header>
+{{CAREER_NARRATIVE}}
 <div class="controls">
   <input class="search-box" id="search" type="search" placeholder="Search articles, titles, summaries…" aria-label="Search articles" />
   <select class="filter" id="filter-pub" aria-label="Filter by publication"><option value="">All publications</option></select>

@@ -39,11 +39,41 @@ function buildStats(normalized) {
   };
 }
 
+function buildCareerNarrative(config) {
+  if (!config.narrative) return '';
+  const { headline, summary, eras } = config.narrative;
+
+  const eraRows = (eras || []).map(era => `
+    <div class="era-card">
+      <div class="era-header">
+        <span class="era-years">${escapeHtml(era.years)}</span>
+        <span class="era-title">${escapeHtml(era.title)}</span>
+      </div>
+      <div class="era-meta">
+        <span class="era-meta-item"><span class="era-meta-label">Focus</span>${escapeHtml(era.focus)}</span>
+        <span class="era-meta-item"><span class="era-meta-label">Tone</span>${escapeHtml(era.tone)}</span>
+      </div>
+      <p class="era-description">${escapeHtml(era.description)}</p>
+    </div>`).join('');
+
+  return `
+<section class="narrative-section">
+  <div class="narrative-inner">
+    <div class="narrative-label">Career Arc</div>
+    <h2 class="narrative-headline">${escapeHtml(headline || '')}</h2>
+    <p class="narrative-summary">${escapeHtml(summary || '')}</p>
+    <div class="era-grid">${eraRows}</div>
+  </div>
+</section>`;
+}
+
 function injectTemplate(template, config, normalized, stats) {
+  const careerNarrative = buildCareerNarrative(config);
   return template
     .replace(/\{\{PERSONA_NAME\}\}/g,      escapeHtml(config.name))
     .replace(/\{\{PERSONA_SLUG\}\}/g,      escapeHtml(config.slug || ''))
-    .replace(/\{\{PERSONA_BIO\}\}/g,       escapeHtml(config.bio || ''))
+    .replace(/\{\{PERSONA_BIO\}\}/g,       escapeHtml(config.bio || config.description || ''))
+    .replace(/\{\{CAREER_NARRATIVE\}\}/g,  careerNarrative)
     .replace(/\{\{TOTAL_ARTICLES\}\}/g,    stats.totalArticles)
     .replace(/\{\{PUBLICATION_COUNT\}\}/g, stats.publications)
     .replace(/\{\{YEAR_RANGE\}\}/g,        stats.yearRange)
@@ -52,7 +82,7 @@ function injectTemplate(template, config, normalized, stats) {
     .replace(/\{\{CONFIG_JSON\}\}/g,       JSON.stringify({
       name:  config.name,
       slug:  config.slug,
-      bio:   config.bio  || '',
+      bio:   config.bio || config.description || '',
       links: config.links || {}
     }));
 }

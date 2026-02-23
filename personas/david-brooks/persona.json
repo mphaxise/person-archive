@@ -1,10 +1,44 @@
 {
   "name": "David Brooks",
   "slug": "david-brooks",
-  "description": "Political and cultural commentator, NYT columnist",
+  "bio": "Op-ed columnist, author, and social commentator. Joined the New York Times in 2003 as a conservative voice; departed for The Atlantic in 2026. Author of Bobos in Paradise, The Road to Character, and How to Know a Person.",
   "publications": [
     "Seattle Times",
     "The Atlantic",
     "The New York Times"
-  ]
+  ],
+  "narrative": {
+    "headline": "From Comic Sociologist to Social Healer",
+    "summary": "Over nearly 23 years at The New York Times (2003–2026), David Brooks evolved from a wry cultural observer explaining Red America to Blue America, into a moral philosopher diagnosing America's epidemic of loneliness. By the time he departed for The Atlantic, he had effectively ceased being a political pundit — becoming a public moralist whose singular focus was human connection.",
+    "eras": [
+      {
+        "years": "2003–2008",
+        "title": "The Comic Sociologist",
+        "focus": "Consumer habits, Red/Blue divide",
+        "tone": "Wry, detached, sociological",
+        "description": "Hired to replace William Safire, Brooks translated Red America to Blue America. Building on Bobos in Paradise, he analyzed the 'Bohemian Bourgeoisie' and used consumer habits — who buys which mustard, who drives which SUV — to explain the cultural fault lines of the Bush era."
+      },
+      {
+        "years": "2009–2015",
+        "title": "The Burkean Moderate",
+        "focus": "Policy reform, institutional stability",
+        "tone": "Intellectual, wonky, respectful",
+        "description": "With Obama's rise, Brooks became the primary voice of Burkean Conservatism — valuing gradual change and cherished institutions over radical disruption. He championed 'Reform Conservatism' and famously admired Obama's intellectual sophistication, while criticizing the GOP's drift toward Tea Party populism and anti-intellectualism."
+      },
+      {
+        "years": "2015–2019",
+        "title": "The Moral Crusader",
+        "focus": "Character, virtue, anti-Trumpism",
+        "tone": "Urgent, spiritual, introspective",
+        "description": "Trump's rise caused a rupture. Brooks pivoted sharply toward morality, psychology, and the soul — developing the 'Two Mountains' concept (career success vs. service/community) and diagnosing Trump as a symptom of moral decay rather than a cause. His writing became openly spiritual, blending Christian theology with Jewish tradition around sin, redemption, and grace."
+      },
+      {
+        "years": "2020–2026",
+        "title": "The Weaver & The Healer",
+        "focus": "Loneliness, connection, empathy",
+        "tone": "Vulnerable, earnest, pleading",
+        "description": "Brooks largely abandoned day-to-day politics, launching a singular crusade against social isolation. He championed 'Weavers' — people knitting communities back together at the local level — and argued that politics is downstream of culture. His 2023 book How to Know a Person focused on the skills of empathy: how to listen, ask questions, and make others feel genuinely seen."
+      }
+    ]
+  }
 }
