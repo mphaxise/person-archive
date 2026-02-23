@@ -23,7 +23,7 @@ function slugify(name) {
  *
  * @param {{ name: string, strategies?: string[], options?: object }} params
  * @param {object} env  — { GITHUB_TOKEN, CF_TOKEN, CF_ACCOUNT_ID } (process.env or CF env bindings)
- * @returns {{ articleCount, githubUrl?, liveUrl? }}
+ * @returns {{ articleCount, indexHtml, githubUrl?, liveUrl? }}
  */
 export async function runPipeline({ name, strategies = [], options = {} }, env = {}) {
   if (!name?.trim()) throw new Error('name is required');
@@ -64,7 +64,7 @@ export async function runPipeline({ name, strategies = [], options = {} }, env =
   };
   console.log(`✅ Site built (${Math.round(indexHtml.length / 1024)}KB)`);
 
-  const results = { articleCount: articles.length };
+  const results = { articleCount: articles.length, indexHtml };
 
   // ── 3. Push to GitHub ─────────────────────────────────────────────────────
   const projectName = `${slug}-archive`;

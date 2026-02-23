@@ -54,7 +54,6 @@ export async function onRequestPost(context) {
       };
 
       // ── Dynamic import of pipeline (keeps tree-shaking clean) ───────────────
-      // We import the pipeline module which is already Workers-compatible
       const { runPipeline } = await import('../../src/pipeline.js');
 
       await send('log', `📡 Running collection pipeline (strategies: ${strategies.length ? strategies.join(', ') : 'default'})...`);
@@ -72,11 +71,15 @@ export async function onRequestPost(context) {
       if (result.liveUrl) {
         await send('log', `🌐 Live: ${result.liveUrl}`);
       }
+      if (!result.liveUrl && !result.githubUrl) {
+        await send('log', `📄 Archive built in-memory — opening preview in new tab...`);
+      }
 
       await send('done', 'Archive complete!', {
         articleCount: result.articleCount,
         githubUrl:    result.githubUrl || null,
         liveUrl:      result.liveUrl   || null,
+        html:         result.indexHtml || null,
       });
 
     } catch (err) {

@@ -455,6 +455,7 @@
             </div>
           </a>`;
       }
+
       if (data?.githubUrl) {
         links.innerHTML += `
           <a class="result-link" href="${data.githubUrl}" target="_blank" rel="noopener">
@@ -462,6 +463,20 @@
             <div class="link-meta">
               <span class="link-label">GitHub Repository</span>
               <span class="link-url">${data.githubUrl}</span>
+            </div>
+          </a>`;
+      }
+
+      // Inline preview — always available even without deploy tokens
+      if (data?.html) {
+        const blob = new Blob([data.html], { type: 'text/html' });
+        const blobUrl = URL.createObjectURL(blob);
+        links.innerHTML += `
+          <a class="result-link" href="${blobUrl}" target="_blank" rel="noopener">
+            <span class="link-icon">📖</span>
+            <div class="link-meta">
+              <span class="link-label">Browse Archive (Preview)</span>
+              <span class="link-url">Open searchable article list in new tab →</span>
             </div>
           </a>`;
       }
