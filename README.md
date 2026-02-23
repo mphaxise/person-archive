@@ -132,6 +132,20 @@ The articles JSON should match this schema:
 
 ### Cloudflare Pages (recommended)
 
+**Dashboard build settings:**
+
+| Setting | Value |
+|---------|-------|
+| Build command | `npm run pages:build` |
+| Build output directory | `public` |
+| Deploy command | *(leave empty)* |
+
+**Required secrets** (Settings → Environment Variables → add as encrypted):
+- `GITHUB_TOKEN` — Personal access token with `repo` scope
+- `CF_TOKEN` — Cloudflare API token with "Edit Cloudflare Workers" permissions
+- `CF_ACCOUNT_ID` — Your Cloudflare account ID (right sidebar on dash.cloudflare.com)
+
+
 ```bash
 # Install and login to wrangler
 npm install -g wrangler
