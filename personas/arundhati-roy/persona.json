@@ -1,0 +1,41 @@
+{
+  "name": "Arundhati Roy",
+  "slug": "arundhati-roy",
+  "bio": "",
+  "publications": [
+    {
+      "id": "new_indian_express",
+      "authorSlug": ""
+    },
+    {
+      "id": "the_wire",
+      "authorSlug": ""
+    },
+    {
+      "id": "scroll_in",
+      "authorSlug": ""
+    },
+    {
+      "id": "epw",
+      "authorSlug": ""
+    },
+    {
+      "id": "outlook_india",
+      "authorSlug": ""
+    },
+    {
+      "id": "muck_rack",
+      "authorSlug": "Arundhati Roy"
+    }
+  ],
+  "searchQueries": [
+    "\"Arundhati Roy\" opinion article",
+    "\"Arundhati Roy\" essay column"
+  ],
+  "links": {
+    "twitter": "",
+    "linkedin": "",
+    "website": ""
+  },
+  "outputDir": "/blaxel/workspace/person-archive/dist/arundhati-roy"
+}

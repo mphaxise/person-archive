@@ -1,0 +1,10 @@
+{
+  "name": "David Brooks",
+  "slug": "david-brooks",
+  "description": "Political and cultural commentator, NYT columnist",
+  "publications": [
+    "Seattle Times",
+    "The Atlantic",
+    "The New York Times"
+  ]
+}

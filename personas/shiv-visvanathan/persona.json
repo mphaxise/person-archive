@@ -1,0 +1,20 @@
+{
+  "name": "Shiv Visvanathan",
+  "slug": "shiv-visvanathan",
+  "bio": "Political sociologist, public intellectual, and columnist. Known for his critiques of modernity, science policy, and Indian democracy.",
+  "publications": [
+    { "id": "new_indian_express", "authorSlug": "shiv-visvanathan" },
+    { "id": "the_wire", "authorSlug": "shiv-visvanathan" },
+    { "id": "scroll_in", "authorSlug": "shiv-visvanathan" },
+    { "id": "epw", "authorSlug": "shiv-visvanathan" },
+    { "id": "outlook_india", "authorSlug": "shiv-visvanathan" },
+    { "id": "muck_rack", "authorSlug": "shiv-visvanathan" }
+  ],
+  "searchQueries": ["Shiv Visvanathan opinion column"],
+  "links": {
+    "twitter": "",
+    "linkedin": "",
+    "website": ""
+  },
+  "outputDir": "dist/shiv-visvanathan"
+}
