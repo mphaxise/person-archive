@@ -82,7 +82,8 @@ app.post('/api/generate', (req, res) => {
     // Try to find a pages.dev URL in logs
     const allOutput = stdout + stderr;
     const urlMatch = allOutput.match(/https?:\/\/[\w-]+\.pages\.dev[^\s]*/);
-    const liveUrl = urlMatch ? urlMatch[0] : null;
+    const slug2 = name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-');
+    const liveUrl = urlMatch ? urlMatch[0] : `https://${slug2}-archive.pages.dev`;
 
     const slug = name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-');
     const ghUrl = `https://github.com/mphaxise/${slug}-archive`;
